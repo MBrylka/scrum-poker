@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Scrum Poker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+.container { max-width: 700px; width: 100%; padding: 2rem; }
+h1 { text-align: center; font-size: 1.75rem; margin-bottom: .25rem; }
+.subtitle { text-align: center; color: #888; margin-bottom: 2rem; font-size: .9rem; }
+.card { background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-size: .875rem; font-weight: 600; margin-bottom: .375rem; color: #444; }
+.field input {
+  width: 100%; padding: .75rem 1rem; border: 2px solid #e0e0e0; border-radius: 8px;
+  font-size: 1rem; outline: none; transition: border-color .2s;
+}
+.field input:focus { border-color: #6c5ce7; }
+.btn {
+  width: 100%; padding: .75rem; border: none; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity .2s;
+  background: #6c5ce7; color: #fff;
+}
+.btn:hover { opacity: .9; }
+.btn-sm {
+  padding: .4rem .85rem; border: none; border-radius: 6px; font-size: .8rem;
+  cursor: pointer; font-weight: 600; background: #e74c3c; color: #fff; transition: opacity .2s;
+}
+.btn-sm:hover { opacity: .85; }
+table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+th { text-align: left; font-size: .8rem; color: #888; padding: .5rem .75rem; border-bottom: 2px solid #eee; }
+td { padding: .75rem; border-bottom: 1px solid #f0f0f0; font-size: .9rem; }
+td.actions { text-align: right; }
+.empty { text-align: center; padding: 2rem; color: #aaa; font-size: .9rem; }
+.error { color: #e74c3c; text-align: center; margin-top: 1rem; display: none; font-size: .9rem; }
+.logout { text-align: center; margin-top: 1.5rem; }
+.logout a { color: #888; font-size: .85rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Scrum Poker Admin</h1>
+  <p class="subtitle">Manage rooms</p>
+
+  <div id="loginCard" class="card">
+    <div class="field">
+      <label for="password">Admin Password</label>
+      <input type="password" id="password" placeholder="Enter admin password" autocomplete="current-password">
+    </div>
+    <button class="btn" onclick="login()">Login</button>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div id="adminPanel" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <strong>Rooms</strong>
+        <button class="btn-sm" style="background:#888" onclick="logout()">Logout</button>
+      </div>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
+        <tbody id="roomsBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function getPwd() { return sessionStorage.getItem('sp-admin-pwd'); }
+
+async function api(path, options = {}) {
+  const pwd = getPwd();
+  const headers = { 'X-Admin-Password': pwd };
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(path, { ...options, headers });
+  if (res.status === 401) { sessionStorage.removeItem('sp-admin-pwd'); showLogin(); return null; }
+  return res;
+}
+
+async function login() {
+  const pwd = document.getElementById('password').value;
+  sessionStorage.setItem('sp-admin-pwd', pwd);
+  const res = await api('/api/admin/rooms');
+  if (!res) return;
+  const rooms = await res.json();
+  if (!Array.isArray(rooms)) { showError('Invalid password'); return; }
+  document.getElementById('error').style.display = 'none';
+  showPanel(rooms);
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function showLogin() {
+  document.getElementById('loginCard').style.display = 'block';
+  document.getElementById('adminPanel').style.display = 'none';
+}
+
+async function showPanel(rooms) {
+  document.getElementById('loginCard').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+
+  const tbody = document.getElementById('roomsBody');
+  if (!rooms || rooms.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No rooms yet</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rooms.map(r =>
+    `<tr>
+      <td><code>${esc(r.id)}</code></td>
+      <td>${esc(r.name)}</td>
+      <td>${esc(r.created_at)}</td>
+      <td class="actions">
+        <button class="btn-sm" onclick="deleteRoom('${r.id}')">Delete</button>
+      </td>
+    </tr>`
+  ).join('');
+}
+
+async function deleteRoom(id) {
+  if (!confirm('Delete room #' + id + '?')) return;
+  const res = await api('/api/admin/rooms/' + id, { method: 'DELETE' });
+  if (res && res.ok) {
+    const rooms = await (await api('/api/admin/rooms')).json();
+    showPanel(rooms);
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem('sp-admin-pwd');
+  location.reload();
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// auto-login if password in session
+(async function() {
+  if (getPwd()) {
+    const res = await api('/api/admin/rooms');
+    if (res) {
+      const rooms = await res.json();
+      if (Array.isArray(rooms)) showPanel(rooms);
+    }
+  }
+})();
+</script>
+</body>
+</html>

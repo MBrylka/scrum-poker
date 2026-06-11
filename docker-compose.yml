@@ -1,0 +1,12 @@
+services:
+  scrum-poker:
+    build: .
+    container_name: scrum-poker
+    ports:
+      - "8090:3000"
+    environment:
+      - ADMIN_PASSWORD=pass
+      - TZ=tz
+    volumes:
+      - ./data:/app/data
+    restart: always

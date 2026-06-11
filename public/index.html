@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scrum Poker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+.container { max-width: 480px; width: 100%; padding: 2rem; }
+h1 { text-align: center; font-size: 2rem; margin-bottom: 2rem; color: #1a1a2e; }
+.card {
+  background: #fff; border-radius: 12px; padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.field { margin-bottom: 1rem; }
+.field label { display: block; font-size: .875rem; font-weight: 600; margin-bottom: .375rem; color: #444; }
+.field input {
+  width: 100%; padding: .75rem 1rem; border: 2px solid #e0e0e0; border-radius: 8px;
+  font-size: 1rem; transition: border-color .2s; outline: none;
+}
+.field input:focus { border-color: #6c5ce7; }
+.btn {
+  width: 100%; padding: .85rem; border: none; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity .2s;
+  background: #6c5ce7; color: #fff;
+}
+.btn:hover { opacity: .9; }
+.btn:active { opacity: .8; }
+.recent { margin-top: 1.5rem; }
+.recent h3 { font-size: .9rem; color: #888; margin-bottom: .5rem; }
+.recent a {
+  display: block; padding: .5rem .75rem; background: #f8f9fa; border-radius: 6px;
+  color: #6c5ce7; text-decoration: none; margin-bottom: .375rem; font-size: .875rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recent a:hover { background: #eef0ff; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Scrum Poker</h1>
+  <div class="card">
+    <div class="field">
+      <label for="username">Your name</label>
+      <input type="text" id="username" placeholder="e.g. Alice" autocomplete="name">
+    </div>
+    <div class="field">
+      <label for="roomName">Room name (optional)</label>
+      <input type="text" id="roomName" placeholder="e.g. Sprint 42">
+    </div>
+    <button class="btn" onclick="createRoom()">Create Room</button>
+    <div id="recent" class="recent" style="display:none">
+      <h3>Recent rooms</h3>
+      <div id="recentList"></div>
+    </div>
+  </div>
+</div>
+<script>
+const usernameEl = document.getElementById('username');
+const savedName = localStorage.getItem('sp-username');
+if (savedName) usernameEl.value = savedName;
+
+function showRecent() {
+  const ids = JSON.parse(localStorage.getItem('sp-rooms') || '[]');
+  if (ids.length === 0) return;
+  document.getElementById('recent').style.display = 'block';
+  document.getElementById('recentList').innerHTML = ids.map(id =>
+    `<a href="/room/${id}">Room #${id}</a>`
+  ).join('');
+}
+showRecent();
+
+async function createRoom() {
+  const username = usernameEl.value.trim();
+  if (!username) { usernameEl.focus(); return; }
+  localStorage.setItem('sp-username', username);
+
+  const res = await fetch('/api/rooms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: document.getElementById('roomName').value.trim() || undefined })
+  });
+  if (!res.ok) { alert('Failed to create room'); return; }
+  const { id } = await res.json();
+  const recent = JSON.parse(localStorage.getItem('sp-rooms') || '[]');
+  if (!recent.includes(id)) { recent.unshift(id); if (recent.length > 10) recent.pop(); }
+  localStorage.setItem('sp-rooms', JSON.stringify(recent));
+  window.location.href = `/room/${id}`;
+}
+
+usernameEl.addEventListener('keydown', e => { if (e.key === 'Enter') createRoom(); });
+document.getElementById('roomName').addEventListener('keydown', e => { if (e.key === 'Enter') createRoom(); });
+</script>
+</body>
+</html>

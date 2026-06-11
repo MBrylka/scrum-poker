@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scrum Poker Room</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5; color: #1a1a2e; min-height: 100vh; display: flex;
+  align-items: center; justify-content: center;
+}
+.container { max-width: 800px; width: 100%; padding: 2rem; }
+.header { text-align: center; margin-bottom: 2rem; }
+.header h1 { font-size: 2rem; }
+.header .room-id { font-size: .95rem; color: #888; margin-top: .25rem; }
+.header .actions { margin-top: 1rem; display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
+.btn-sm {
+  padding: .5rem 1.25rem; border: none; border-radius: 8px; font-size: .9rem;
+  cursor: pointer; font-weight: 600; transition: opacity .2s;
+}
+.btn-sm:hover { opacity: .85; }
+.btn-outline { background: transparent; border: 2px solid #6c5ce7; color: #6c5ce7; }
+.btn-outline:hover { background: #6c5ce7; color: #fff; opacity: 1; }
+.btn-danger { background: #e74c3c; color: #fff; }
+
+.participants {
+  display: flex; flex-direction: column; align-items: center;
+  margin-bottom: 1.5rem; min-height: 2rem;
+}
+.participant {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem 1rem .5rem .5rem; background: #fff; border-radius: 12px;
+  font-size: .95rem; font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  margin-bottom: .4rem; width: 240px;
+}
+.participant .status-card {
+  width: 32px; height: 42px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center; font-size: .8rem;
+  font-weight: 700; flex-shrink: 0; transition: all .2s;
+}
+.participant .status-card.empty {
+  border: 2px solid #ddd; background: transparent;
+}
+.participant .status-card.filled {
+  border: 2px solid #6c5ce7; background: #6c5ce7;
+}
+.participant .status-card.revealed {
+  border: 2px solid #6c5ce7; background: #6c5ce7; color: #fff;
+  font-size: .95rem;
+}
+.participant .status-card.unrevealed {
+  border: 2px solid #e74c3c; background: #e74c3c; color: #fff;
+  font-size: .95rem;
+}
+
+.vote-status {
+  text-align: center; font-size: 1rem; color: #888; margin-bottom: 1rem;
+  min-height: 1.5rem;
+}
+
+.cards {
+  display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center;
+  margin-bottom: 1.5rem;
+}
+.card {
+  width: 78px; height: 110px; border: 2px solid #e0e0e0; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  font-weight: 700; cursor: pointer; background: #fff; transition: all .15s;
+  user-select: none; color: #1a1a2e;
+}
+.card:hover { border-color: #6c5ce7; transform: translateY(-4px); box-shadow: 0 4px 12px rgba(108,92,231,.2); }
+.card.selected { border-color: #6c5ce7; background: #6c5ce7; color: #fff; transform: translateY(-4px); box-shadow: 0 4px 12px rgba(108,92,231,.3); }
+.cards-disabled .card { cursor: default; pointer-events: none; opacity: .6; }
+.cards-disabled .card:hover { transform: none; box-shadow: none; border-color: #e0e0e0; }
+
+.average {
+  display: none; text-align: center; font-size: 1.3rem; font-weight: 700;
+  color: #6c5ce7; margin-bottom: 1rem; padding: .5rem;
+  background: rgba(108,92,231,.08); border-radius: 10px;
+}
+
+.countdown-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(26,26,46,.85);
+  align-items: center; justify-content: center; z-index: 100;
+}
+.countdown-overlay .num {
+  font-size: 8rem; font-weight: 800; color: #fff;
+  animation: pop .5s ease;
+}
+.countdown-overlay .num.reveal-text { font-size: 3rem; }
+@keyframes pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.bottom-actions { text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1 id="roomTitle">Scrum Poker</h1>
+    <div class="room-id" id="roomIdDisplay"></div>
+    <div class="actions">
+      <button class="btn-sm btn-outline" onclick="copyLink(this)">Copy Link</button>
+      <button class="btn-sm btn-outline" onclick="window.location.href='/'">Home</button>
+      <button class="btn-sm btn-outline" id="forceRevealBtn" style="display:none" onclick="forceReveal()">Reveal Now</button>
+      <button class="btn-sm btn-danger" id="resetBtn" style="display:none" onclick="resetVotes()">New Round</button>
+    </div>
+  </div>
+
+  <div id="averageDisplay" class="average"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="vote-status" id="voteStatus">Waiting for players...</div>
+
+  <div class="participants" id="participants"></div>
+
+  <div class="bottom-actions"></div>
+</div>
+
+<div class="countdown-overlay" id="countdownOverlay">
+  <div class="num" id="countdownNum"></div>
+</div>
+
+<script>
+const roomId = window.location.pathname.split('/').pop();
+const socket = io({ transports: ['websocket', 'polling'] });
+document.getElementById('roomIdDisplay').textContent = 'Room: #' + roomId;
+
+const VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89', '?'];
+
+let state = null;
+let myVote = null;
+let revealedVotes = null;
+let countdownActive = false;
+
+// -- username --
+let username = localStorage.getItem('sp-username');
+if (!username) {
+  username = prompt('Enter your name:');
+  if (!username) { window.location.href = '/'; throw ''; }
+  localStorage.setItem('sp-username', username);
+}
+
+// -- join room --
+socket.emit('join-room', { roomId, username });
+
+// -- socket events --
+socket.on('room-state', s => {
+  state = s;
+  render();
+});
+
+socket.on('voted', ({ count, total }) => {
+  const el = document.getElementById('voteStatus');
+  el.textContent = `Votes: ${count} / ${total}`;
+});
+
+socket.on('countdown', n => {
+  const overlay = document.getElementById('countdownOverlay');
+  const num = document.getElementById('countdownNum');
+  overlay.style.display = 'flex';
+  countdownActive = true;
+  if (n > 0) {
+    num.textContent = n;
+    num.className = 'num';
+  } else {
+    num.textContent = 'Reveal!';
+    num.className = 'num reveal-text';
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      countdownActive = false;
+    }, 1200);
+  }
+});
+
+socket.on('reveal', votes => {
+  revealedVotes = votes;
+  render();
+});
+
+socket.on('reset-votes', () => {
+  myVote = null;
+  revealedVotes = null;
+});
+
+socket.on('error-msg', msg => { alert(msg); window.location.href = '/'; });
+socket.on('room-deleted', () => { alert('This room has been deleted by admin.'); window.location.href = '/'; });
+
+// -- render --
+function render() {
+  if (!state) return;
+
+  // title
+  document.getElementById('roomTitle').textContent = state.revealed ? 'Results' : 'Scrum Poker';
+
+  // participants
+  const pEl = document.getElementById('participants');
+  pEl.innerHTML = state.users.map(u => {
+    let statusClass = 'empty';
+    let statusContent = '';
+    if (state.revealed && revealedVotes) {
+      if (u.id in revealedVotes) {
+        statusClass = 'revealed';
+        statusContent = esc(revealedVotes[u.id]);
+      } else {
+        statusClass = 'unrevealed';
+        statusContent = 'X';
+      }
+    } else if (u.voted) {
+      statusClass = 'filled';
+    }
+    return `<div class="participant">
+      <span class="status-card ${statusClass}">${statusContent}</span>
+      ${esc(u.username)}
+    </div>`;
+  }).join('');
+
+  // vote status
+  if (state.revealed) {
+    document.getElementById('voteStatus').textContent = '';
+  } else {
+    document.getElementById('voteStatus').textContent = `Votes: ${state.votedCount} / ${state.totalUsers}`;
+  }
+
+  // average
+  const avgEl = document.getElementById('averageDisplay');
+  if (state.revealed && revealedVotes) {
+    const nums = state.users.map(u => parseFloat(revealedVotes[u.id])).filter(v => !isNaN(v));
+    if (nums.length > 0) {
+      const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+      avgEl.textContent = `Average: ${avg % 1 === 0 ? avg.toFixed(0) : avg.toFixed(1)}`;
+      avgEl.style.display = 'block';
+    } else {
+      avgEl.style.display = 'none';
+    }
+  } else {
+    avgEl.style.display = 'none';
+  }
+
+  // cards
+  const cEl = document.getElementById('cards');
+  cEl.className = state.revealed ? 'cards cards-disabled' : 'cards';
+  cEl.innerHTML = VALUES.map(v => {
+    const selected = !state.revealed && myVote === v ? 'selected' : '';
+    const cls = v.length > 2 ? 'card small' : 'card';
+    return `<div class="${cls} ${selected}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
+  }).join('');
+
+  // reset button
+  document.getElementById('resetBtn').style.display = state.revealed ? 'inline-block' : 'none';
+
+  // force reveal button — show when some voted but not all and not during countdown/reveal
+  const showForceReveal = !state.revealed && !countdownActive && state.votedCount > 0 && state.votedCount < state.totalUsers;
+  document.getElementById('forceRevealBtn').style.display = showForceReveal ? 'inline-block' : 'none';
+}
+
+function selectCard(value) {
+  if (state && (state.revealed || countdownActive)) return;
+  myVote = value;
+  if (state) {
+    const me = state.users.find(u => u.id === socket.id);
+    if (me) me.voted = true;
+  }
+  socket.emit('vote', { value });
+  render();
+}
+
+function forceReveal() {
+  socket.emit('force-reveal');
+}
+
+function resetVotes() {
+  myVote = null;
+  socket.emit('reset');
+}
+
+function copyLink(btn) {
+  const url = window.location.href;
+  const orig = btn.textContent;
+  const done = () => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(url).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+  function fallback() {
+    const inp = document.createElement('input');
+    inp.value = url;
+    inp.style.position = 'fixed';
+    inp.style.opacity = '0';
+    inp.style.pointerEvents = 'none';
+    document.body.appendChild(inp);
+    inp.select();
+    inp.setSelectionRange(0, url.length);
+    try {
+      document.execCommand('copy');
+      done();
+    } catch {
+      prompt('Copy this link:', url);
+      done();
+    }
+    document.body.removeChild(inp);
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

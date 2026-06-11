@@ -1,0 +1,13 @@
+{
+  "name": "scrum-poker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple real-time Scrum Poker application",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5",
+    "better-sqlite3": "^11.3.0",
+    "express-rate-limit": "^7.4.1"
+  }
+}
