@@ -14,9 +14,6 @@ body {
   align-items: center; justify-content: center;
 }
 .container { max-width: 800px; width: 100%; padding: 2rem; }
-.vote-title { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
-.vote-title input { width: min(360px, 70%); padding: .5rem .7rem; border: 2px solid #e0e0e0; border-radius: 7px; }
-.vote-title button { padding: .5rem .8rem; border: 0; border-radius: 7px; background: #6c5ce7; color: #fff; cursor: pointer; }
 .header { text-align: center; margin-bottom: 2rem; }
 .header h1 { font-size: 2rem; }
 .header .room-id { font-size: .95rem; color: #888; margin-top: .25rem; }
@@ -143,10 +140,6 @@ body {
   <div class="header">
     <h1 id="roomTitle">Scrum Poker</h1>
     <div class="room-id" id="roomIdDisplay"></div>
-    <div class="vote-title">
-      <input id="voteTitle" maxlength="120" placeholder="What are we estimating?">
-      <button onclick="saveTitle()">Set title</button>
-    </div>
     <div class="actions">
       <button class="btn-sm btn-outline" onclick="copyLink(this)">Copy Link</button>
       <button class="btn-sm btn-outline" onclick="window.location.href='/'">Home</button>
@@ -271,8 +264,6 @@ function render() {
 
   // title
   document.getElementById('roomTitle').textContent = roomName;
-  const titleEl = document.getElementById('voteTitle');
-  if (document.activeElement !== titleEl) titleEl.value = state.title || '';
 
   // participants
   const pEl = document.getElementById('participants');
@@ -413,11 +404,6 @@ function confirmVote() {
 function cancelVote() {
   pendingVote = null;
   render();
-}
-
-function saveTitle() {
-  if (!state || state.revealed) return;
-  socket.emit('set-title', document.getElementById('voteTitle').value);
 }
 
 function forceReveal() {

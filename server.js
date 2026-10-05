@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
     if (!roomState[roomId]) {
       roomState[roomId] = {
         users: {}, votes: {}, revealedVotes: null, revealed: false,
-        title: '', countdown: null, timeoutTimer: null, timeoutRemaining: null
+        countdown: null, timeoutTimer: null, timeoutRemaining: null
       };
     }
 
@@ -162,7 +162,6 @@ io.on('connection', (socket) => {
       state.votes = {};
       state.revealedVotes = null;
       state.revealed = false;
-      state.title = '';
       for (const user of Object.values(state.users)) user.voted = false;
     } else if (state.countdown && isNewParticipant) {
       clearInterval(state.countdown);
@@ -226,7 +225,6 @@ io.on('connection', (socket) => {
     state.votes = {};
     state.revealedVotes = null;
     state.revealed = false;
-    state.title = '';
     if (state.countdown) clearInterval(state.countdown);
     state.countdown = null;
     if (state.timeoutTimer) clearInterval(state.timeoutTimer);
@@ -271,12 +269,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('set-title', title => {
-    if (!currentRoom || !roomState[currentRoom] || roomState[currentRoom].revealed) return;
-    const state = roomState[currentRoom];
-    state.title = String(title || '').trim().slice(0, 120);
-    io.to(currentRoom).emit('room-state', serializeState(currentRoom));
-  });
 });
 
 function startRoundTimeout(roomId) {
@@ -338,7 +330,6 @@ function serializeState(roomId) {
       connected: u.sockets.size > 0
     })),
     revealed: state.revealed,
-    title: state.title,
     votes: state.revealed ? { ...state.revealedVotes } : {},
     timeoutRemaining: state.timeoutRemaining,
     totalUsers: Object.keys(state.users).length,
