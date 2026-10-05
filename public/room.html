@@ -14,16 +14,6 @@ body {
   align-items: center; justify-content: center;
 }
 .container { max-width: 800px; width: 100%; padding: 2rem; }
-.history {
-  position: fixed; left: 1.5rem; top: 1.5rem; width: 220px; max-height: calc(100vh - 3rem);
-  overflow: auto; background: #fff; border-radius: 12px; padding: 1rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,.08);
-}
-.history h2 { font-size: .95rem; margin-bottom: .75rem; }
-.history-empty { color: #aaa; font-size: .8rem; }
-.history-item { border-top: 1px solid #eee; padding: .7rem 0; font-size: .8rem; }
-.history-item strong { display: block; margin-bottom: .2rem; }
-.history-item span { color: #888; }
 .vote-title { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
 .vote-title input { width: min(360px, 70%); padding: .5rem .7rem; border: 2px solid #e0e0e0; border-radius: 7px; }
 .vote-title button { padding: .5rem .8rem; border: 0; border-radius: 7px; background: #6c5ce7; color: #fff; cursor: pointer; }
@@ -73,14 +63,16 @@ body {
   color: #e74c3c; font-size: .65rem; font-weight: 700;
 }
 .timeout-track {
-  position: absolute; inset: 0; height: auto; background: #fff; z-index: 0;
+  display: block; position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+  height: auto; background: #fff; z-index: 0;
   pointer-events: none;
 }
 .timeout-fill {
-  display: block; height: 100%; width: 0;
+  display: block; position: absolute; top: 0; bottom: 0; left: 0; width: 0;
   background-color: #fff;
   transition: width 1s linear, background-color 1s linear; opacity: .95;
 }
+.participant.urgent { animation: timeoutShake var(--shake-duration, .6s) ease-in-out infinite; animation-delay: var(--shake-delay, 0s); }
 .participant .status-card.revealed {
   border: 2px solid #6c5ce7; background: #6c5ce7; color: #fff;
   font-size: .95rem;
@@ -136,20 +128,18 @@ body {
 }
 @keyframes flipIn { from { transform: perspective(400px) rotateY(90deg); } to { transform: perspective(400px) rotateY(0); } }
 .participant .status-card.revealed, .participant .status-card.unrevealed { animation: flipIn .45s ease both; }
+@keyframes timeoutShake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(calc(var(--shake-distance, 1px) * -.7), calc(var(--shake-distance, 1px) * .5)); }
+  50% { transform: translate(var(--shake-distance, 1px), calc(var(--shake-distance, 1px) * -.5)); }
+  75% { transform: translate(calc(var(--shake-distance, 1px) * -.5), var(--shake-distance, 1px)); }
+}
 
 .bottom-actions { text-align: center; }
-@media (max-width: 1100px) {
-  .history { position: static; width: 100%; max-height: none; margin-bottom: 1rem; }
-  .history-item { display: inline-block; width: 48%; vertical-align: top; margin-right: 1%; }
-}
 </style>
 </head>
 <body>
 <div class="container">
-  <aside class="history" id="historyPanel">
-    <h2>Previous votes</h2>
-    <div id="historyList" class="history-empty">No completed votes yet</div>
-  </aside>
   <div class="header">
     <h1 id="roomTitle">Scrum Poker</h1>
     <div class="room-id" id="roomIdDisplay"></div>
@@ -286,7 +276,7 @@ function render() {
 
   // participants
   const pEl = document.getElementById('participants');
-  pEl.innerHTML = state.users.map(u => {
+  pEl.innerHTML = state.users.map((u, rowIndex) => {
     let statusClass = 'empty';
     let statusContent = '';
     const disconnected = !u.connected && !state.revealed;
@@ -308,7 +298,10 @@ function render() {
     const timeoutActive = timeoutRemaining !== null && !u.voted && u.connected && !state.revealed;
     const timeoutProgress = timeoutActive ? Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100)) : 0;
     const timeoutBar = timeoutActive ? `<span class="timeout-track" aria-label="Voting timeout"><span class="timeout-fill" style="width:${timeoutProgress}%;background-color:${timeoutColor(timeoutProgress)}"></span></span>` : '';
-    return `<div class="participant${disconnected ? ' disconnected' : ''}" data-user-id="${esc(u.id)}"${disconnected ? ' title="No connection"' : ''}>
+    const urgency = timeoutActive && timeoutProgress >= 50 ? ' urgent' : '';
+    const shake = shakeStyle(timeoutProgress, rowIndex);
+    const urgencyStyle = urgency ? `--shake-distance:${shake.distance};--shake-duration:${shake.duration};--shake-delay:${shake.delay}` : '';
+    return `<div class="participant${disconnected ? ' disconnected' : ''}${urgency}" style="${urgencyStyle}" data-row-index="${rowIndex}" data-user-id="${esc(u.id)}"${disconnected ? ' title="No connection"' : ''}>
       <span class="status-card ${statusClass}">${statusContent}</span>
       <span class="participant-name">${esc(u.username)}</span>
       ${timeoutBar}
@@ -354,8 +347,6 @@ function render() {
     confirmEl.textContent = '';
   }
 
-  renderHistory();
-
   // reset button
   document.getElementById('resetBtn').style.display = state.revealed ? 'inline-block' : 'none';
 
@@ -371,7 +362,26 @@ function updateTimeoutBars() {
   document.querySelectorAll('.timeout-fill').forEach(fill => {
     fill.style.width = `${progress}%`;
     fill.style.backgroundColor = timeoutColor(progress);
+    const row = fill.closest('.participant');
+    row?.classList.toggle('urgent', progress >= 50);
+    if (row) {
+      const style = shakeStyle(progress, row?.dataset.rowIndex || '0');
+      row.style.setProperty('--shake-distance', style.distance);
+      row.style.setProperty('--shake-duration', style.duration);
+      row.style.setProperty('--shake-delay', style.delay);
+    }
   });
+}
+
+function shakeStyle(progress, rowIndex) {
+  const intensity = Math.max(0, Math.min(1, (progress - 50) / 50));
+  const phase = (Number(rowIndex) * 0.37) % 1;
+  const duration = 0.6 - intensity * 0.2;
+  return {
+    distance: `${(0.5 + intensity * 1.5).toFixed(1)}px`,
+    duration: `${duration.toFixed(2)}s`,
+    delay: `-${(duration * phase).toFixed(2)}s`
+  };
 }
 
 function timeoutColor(progress) {
@@ -418,23 +428,6 @@ function resetVotes() {
   myVote = null;
   pendingVote = null;
   socket.emit('reset');
-}
-
-function renderHistory() {
-  const list = document.getElementById('historyList');
-  const history = state.history || [];
-  if (history.length === 0) {
-    list.className = 'history-empty';
-    list.textContent = 'No completed votes yet';
-    return;
-  }
-  list.className = '';
-  list.innerHTML = history.map(round => {
-    const nums = Object.values(round.votes).map(v => parseFloat(v)).filter(v => !isNaN(v));
-    const average = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
-    const formatted = average === null ? 'No numeric votes' : `Average: ${average % 1 === 0 ? average.toFixed(0) : average.toFixed(1)}`;
-    return `<div class="history-item"><strong>${esc(round.title)}</strong><span>${formatted}</span></div>`;
-  }).join('');
 }
 
 function copyLink(btn) {

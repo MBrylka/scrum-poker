@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
     if (!roomState[roomId]) {
       roomState[roomId] = {
         users: {}, votes: {}, revealedVotes: null, revealed: false,
-        title: '', history: [], countdown: null, timeoutTimer: null, timeoutRemaining: null
+        title: '', countdown: null, timeoutTimer: null, timeoutRemaining: null
       };
     }
 
@@ -223,14 +223,6 @@ io.on('connection', (socket) => {
     const state = roomState[currentRoom];
     if (!state) return;
 
-    if (state.revealed) {
-      state.history.unshift({
-        title: state.title || 'Untitled vote',
-        votes: { ...state.revealedVotes },
-        completedAt: new Date().toISOString()
-      });
-      state.history = state.history.slice(0, 20);
-    }
     state.votes = {};
     state.revealedVotes = null;
     state.revealed = false;
@@ -348,7 +340,6 @@ function serializeState(roomId) {
     revealed: state.revealed,
     title: state.title,
     votes: state.revealed ? { ...state.revealedVotes } : {},
-    history: state.history,
     timeoutRemaining: state.timeoutRemaining,
     totalUsers: Object.keys(state.users).length,
     votedCount: Object.keys(state.votes).length
