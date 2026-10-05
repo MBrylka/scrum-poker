@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Scrum Poker Room</title>
+<link rel="icon" href="data:,">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -139,6 +140,24 @@ let state = null;
 let myVote = null;
 let revealedVotes = null;
 let countdownActive = false;
+let roomName = 'Scrum Poker';
+
+const participantId = localStorage.getItem('sp-participant-id') || crypto.randomUUID();
+localStorage.setItem('sp-participant-id', participantId);
+
+fetch('/api/rooms/' + encodeURIComponent(roomId))
+  .then(res => res.ok ? res.json() : Promise.reject(new Error('Room not found')))
+  .then(room => {
+    roomName = room.name || 'Scrum Poker';
+    document.getElementById('roomTitle').textContent = roomName;
+    document.title = roomName + ' - Scrum Poker';
+  })
+  .catch(() => {
+    const rooms = JSON.parse(localStorage.getItem('sp-rooms') || '[]');
+    localStorage.setItem('sp-rooms', JSON.stringify(rooms.filter(id => id !== roomId)));
+    alert('Room not found');
+    window.location.href = '/';
+  });
 
 // -- username --
 let username = localStorage.getItem('sp-username');
@@ -149,11 +168,12 @@ if (!username) {
 }
 
 // -- join room --
-socket.emit('join-room', { roomId, username });
+socket.emit('join-room', { roomId, username, participantId });
 
 // -- socket events --
 socket.on('room-state', s => {
   state = s;
+  revealedVotes = s.revealed ? s.votes : null;
   render();
 });
 
@@ -198,7 +218,7 @@ function render() {
   if (!state) return;
 
   // title
-  document.getElementById('roomTitle').textContent = state.revealed ? 'Results' : 'Scrum Poker';
+  document.getElementById('roomTitle').textContent = roomName;
 
   // participants
   const pEl = document.getElementById('participants');
@@ -232,7 +252,7 @@ function render() {
   // average
   const avgEl = document.getElementById('averageDisplay');
   if (state.revealed && revealedVotes) {
-    const nums = state.users.map(u => parseFloat(revealedVotes[u.id])).filter(v => !isNaN(v));
+    const nums = Object.values(revealedVotes).map(v => parseFloat(v)).filter(v => !isNaN(v));
     if (nums.length > 0) {
       const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
       avgEl.textContent = `Average: ${avg % 1 === 0 ? avg.toFixed(0) : avg.toFixed(1)}`;
@@ -265,7 +285,7 @@ function selectCard(value) {
   if (state && (state.revealed || countdownActive)) return;
   myVote = value;
   if (state) {
-    const me = state.users.find(u => u.id === socket.id);
+    const me = state.users.find(u => u.id === participantId);
     if (me) me.voted = true;
   }
   socket.emit('vote', { value });

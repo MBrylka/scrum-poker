@@ -48,3 +48,6 @@ docker compose up -d
 ```
 
 The admin panel is available at `/admin`.
+
+`ADMIN_PASSWORD` is required at startup. Set `TRUST_PROXY` to the number of trusted
+proxy hops when the application is deployed behind a reverse proxy.

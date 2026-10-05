@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Scrum Poker</title>
+<link rel="icon" href="data:,">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -65,11 +66,21 @@ const usernameEl = document.getElementById('username');
 const savedName = localStorage.getItem('sp-username');
 if (savedName) usernameEl.value = savedName;
 
-function showRecent() {
+async function showRecent() {
   const ids = JSON.parse(localStorage.getItem('sp-rooms') || '[]');
   if (ids.length === 0) return;
+  const valid = (await Promise.all(ids.map(async id => {
+    try {
+      const res = await fetch('/api/rooms/' + encodeURIComponent(id));
+      return res.ok ? id : null;
+    } catch {
+      return id;
+    }
+  }))).filter(Boolean);
+  localStorage.setItem('sp-rooms', JSON.stringify(valid));
+  if (valid.length === 0) return;
   document.getElementById('recent').style.display = 'block';
-  document.getElementById('recentList').innerHTML = ids.map(id =>
+  document.getElementById('recentList').innerHTML = valid.map(id =>
     `<a href="/room/${id}">Room #${id}</a>`
   ).join('');
 }

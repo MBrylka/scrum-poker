@@ -21,7 +21,10 @@ db.exec(`
   )
 `);
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_PASSWORD) {
+  throw new Error('ADMIN_PASSWORD must be set');
+}
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 // Rate limiters
@@ -44,7 +47,9 @@ const adminLimiter = rateLimit({
 });
 
 const app = express();
-app.set('trust proxy', true);
+// Trust only the configured number of proxy hops. The default is no proxy.
+const trustProxy = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
+app.set('trust proxy', Number.isFinite(trustProxy) && trustProxy > 0 ? trustProxy : false);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -128,7 +133,7 @@ io.on('connection', (socket) => {
     return true;
   };
 
-  socket.on('join-room', ({ roomId, username }) => {
+  socket.on('join-room', ({ roomId, username, participantId }) => {
     const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(roomId);
     if (!room) {
       socket.emit('error-msg', 'Room not found');
@@ -138,11 +143,36 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
 
     if (!roomState[roomId]) {
-      roomState[roomId] = { users: {}, votes: {}, revealed: false, countdown: null };
+      roomState[roomId] = { users: {}, votes: {}, revealedVotes: null, revealed: false, countdown: null };
     }
 
     const state = roomState[roomId];
-    state.users[socket.id] = { username, voted: false };
+    participantId = String(participantId || '');
+    if (!participantId) {
+      socket.emit('error-msg', 'A participant session is required');
+      return;
+    }
+
+    const isNewParticipant = !state.users[participantId];
+    if (state.revealed && isNewParticipant) {
+      state.votes = {};
+      state.revealedVotes = null;
+      state.revealed = false;
+      for (const user of Object.values(state.users)) user.voted = false;
+    } else if (state.countdown && isNewParticipant) {
+      clearInterval(state.countdown);
+      state.countdown = null;
+    }
+
+    if (!state.users[participantId]) {
+      state.users[participantId] = { username, voted: false, sockets: new Set() };
+    }
+    const user = state.users[participantId];
+    if (user.cleanupTimer) clearTimeout(user.cleanupTimer);
+    user.cleanupTimer = null;
+    user.username = username;
+    user.sockets.add(socket.id);
+    socket.participantId = participantId;
 
     socket.join(roomId);
     io.to(roomId).emit('room-state', serializeState(roomId));
@@ -154,8 +184,10 @@ io.on('connection', (socket) => {
     const state = roomState[currentRoom];
     if (!state || state.revealed) return;
 
-    state.votes[socket.id] = value;
-    state.users[socket.id].voted = true;
+    const participantId = socket.participantId;
+    if (!participantId || !state.users[participantId]) return;
+    state.votes[participantId] = value;
+    state.users[participantId].voted = true;
 
     const userCount = Object.keys(state.users).length;
     const votedCount = Object.keys(state.votes).length;
@@ -184,12 +216,13 @@ io.on('connection', (socket) => {
     if (!state) return;
 
     state.votes = {};
+    state.revealedVotes = null;
     state.revealed = false;
     if (state.countdown) clearInterval(state.countdown);
     state.countdown = null;
 
-    for (const id of Object.keys(state.users)) {
-      state.users[id].voted = false;
+    for (const user of Object.values(state.users)) {
+      user.voted = false;
     }
 
     io.to(currentRoom).emit('reset-votes');
@@ -200,8 +233,22 @@ io.on('connection', (socket) => {
     if (!currentRoom || !roomState[currentRoom]) return;
 
     const state = roomState[currentRoom];
-    delete state.users[socket.id];
-    delete state.votes[socket.id];
+    const participantId = socket.participantId;
+    const user = participantId && state.users[participantId];
+    if (!user) return;
+    user.sockets.delete(socket.id);
+    if (user.sockets.size === 0) {
+      user.cleanupTimer = setTimeout(() => {
+        if (user.sockets.size > 0 || roomState[currentRoom] !== state) return;
+        delete state.users[participantId];
+        if (!state.revealed) delete state.votes[participantId];
+        if (Object.keys(state.users).length === 0) {
+          delete roomState[currentRoom];
+        } else {
+          io.to(currentRoom).emit('room-state', serializeState(currentRoom));
+        }
+      }, 5000);
+    }
 
     const userCount = Object.keys(state.users).length;
 
@@ -225,7 +272,8 @@ function startCountdown(roomId) {
       clearInterval(state.countdown);
       state.countdown = null;
       state.revealed = true;
-      io.to(roomId).emit('reveal', { ...state.votes });
+      state.revealedVotes = { ...state.votes };
+      io.to(roomId).emit('reveal', { ...state.revealedVotes });
       io.to(roomId).emit('room-state', serializeState(roomId));
     }
     count--;
@@ -243,7 +291,7 @@ function serializeState(roomId) {
       voted: u.voted
     })),
     revealed: state.revealed,
-    votes: state.revealed ? { ...state.votes } : {},
+    votes: state.revealed ? { ...state.revealedVotes } : {},
     totalUsers: Object.keys(state.users).length,
     votedCount: Object.keys(state.votes).length
   };

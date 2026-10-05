@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin - Scrum Poker</title>
+<link rel="icon" href="data:,">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -87,7 +88,7 @@ async function login() {
   const pwd = document.getElementById('password').value;
   sessionStorage.setItem('sp-admin-pwd', pwd);
   const res = await api('/api/admin/rooms');
-  if (!res) return;
+  if (!res) { showError('Invalid password'); return; }
   const rooms = await res.json();
   if (!Array.isArray(rooms)) { showError('Invalid password'); return; }
   document.getElementById('error').style.display = 'none';
