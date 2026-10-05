@@ -26,6 +26,7 @@ if (!ADMIN_PASSWORD) {
   throw new Error('ADMIN_PASSWORD must be set');
 }
 const PORT = parseInt(process.env.PORT, 10) || 3000;
+const ROUND_TIMEOUT_SECONDS = 15;
 
 // Rate limiters
 const createRoomLimiter = rateLimit({
@@ -143,7 +144,10 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
 
     if (!roomState[roomId]) {
-      roomState[roomId] = { users: {}, votes: {}, revealedVotes: null, revealed: false, countdown: null };
+      roomState[roomId] = {
+        users: {}, votes: {}, revealedVotes: null, revealed: false,
+        title: '', history: [], countdown: null, timeoutTimer: null, timeoutRemaining: null
+      };
     }
 
     const state = roomState[roomId];
@@ -158,10 +162,12 @@ io.on('connection', (socket) => {
       state.votes = {};
       state.revealedVotes = null;
       state.revealed = false;
+      state.title = '';
       for (const user of Object.values(state.users)) user.voted = false;
     } else if (state.countdown && isNewParticipant) {
       clearInterval(state.countdown);
       state.countdown = null;
+      if (Object.keys(state.votes).length > 0) startRoundTimeout(roomId);
     }
 
     if (!state.users[participantId]) {
@@ -189,6 +195,8 @@ io.on('connection', (socket) => {
     state.votes[participantId] = value;
     state.users[participantId].voted = true;
 
+    if (Object.keys(state.votes).length === 1) startRoundTimeout(currentRoom);
+
     const userCount = Object.keys(state.users).length;
     const votedCount = Object.keys(state.votes).length;
 
@@ -215,11 +223,23 @@ io.on('connection', (socket) => {
     const state = roomState[currentRoom];
     if (!state) return;
 
+    if (state.revealed) {
+      state.history.unshift({
+        title: state.title || 'Untitled vote',
+        votes: { ...state.revealedVotes },
+        completedAt: new Date().toISOString()
+      });
+      state.history = state.history.slice(0, 20);
+    }
     state.votes = {};
     state.revealedVotes = null;
     state.revealed = false;
+    state.title = '';
     if (state.countdown) clearInterval(state.countdown);
     state.countdown = null;
+    if (state.timeoutTimer) clearInterval(state.timeoutTimer);
+    state.timeoutTimer = null;
+    state.timeoutRemaining = null;
 
     for (const user of Object.values(state.users)) {
       user.voted = false;
@@ -258,7 +278,38 @@ io.on('connection', (socket) => {
       io.to(currentRoom).emit('room-state', serializeState(currentRoom));
     }
   });
+
+  socket.on('set-title', title => {
+    if (!currentRoom || !roomState[currentRoom] || roomState[currentRoom].revealed) return;
+    const state = roomState[currentRoom];
+    state.title = String(title || '').trim().slice(0, 120);
+    io.to(currentRoom).emit('room-state', serializeState(currentRoom));
+  });
 });
+
+function startRoundTimeout(roomId) {
+  const state = roomState[roomId];
+  if (!state || state.timeoutTimer) return;
+
+  let remaining = ROUND_TIMEOUT_SECONDS;
+  state.timeoutRemaining = remaining;
+  state.timeoutTimer = setInterval(() => {
+    if (!roomState[roomId] || state.revealed) {
+      clearInterval(state.timeoutTimer);
+      state.timeoutTimer = null;
+      return;
+    }
+    remaining--;
+    state.timeoutRemaining = remaining;
+    io.to(roomId).emit('round-timeout', remaining);
+    if (remaining <= 0) {
+      clearInterval(state.timeoutTimer);
+      state.timeoutTimer = null;
+      state.timeoutRemaining = null;
+      startCountdown(roomId);
+    }
+  }, 1000);
+}
 
 function startCountdown(roomId) {
   const state = roomState[roomId];
@@ -271,6 +322,9 @@ function startCountdown(roomId) {
     if (count <= 0) {
       clearInterval(state.countdown);
       state.countdown = null;
+      if (state.timeoutTimer) clearInterval(state.timeoutTimer);
+      state.timeoutTimer = null;
+      state.timeoutRemaining = null;
       state.revealed = true;
       state.revealedVotes = { ...state.votes };
       io.to(roomId).emit('reveal', { ...state.revealedVotes });
@@ -288,10 +342,14 @@ function serializeState(roomId) {
     users: Object.entries(state.users).map(([id, u]) => ({
       id,
       username: u.username,
-      voted: u.voted
+      voted: u.voted,
+      connected: u.sockets.size > 0
     })),
     revealed: state.revealed,
+    title: state.title,
     votes: state.revealed ? { ...state.revealedVotes } : {},
+    history: state.history,
+    timeoutRemaining: state.timeoutRemaining,
     totalUsers: Object.keys(state.users).length,
     votedCount: Object.keys(state.votes).length
   };

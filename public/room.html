@@ -14,6 +14,19 @@ body {
   align-items: center; justify-content: center;
 }
 .container { max-width: 800px; width: 100%; padding: 2rem; }
+.history {
+  position: fixed; left: 1.5rem; top: 1.5rem; width: 220px; max-height: calc(100vh - 3rem);
+  overflow: auto; background: #fff; border-radius: 12px; padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.history h2 { font-size: .95rem; margin-bottom: .75rem; }
+.history-empty { color: #aaa; font-size: .8rem; }
+.history-item { border-top: 1px solid #eee; padding: .7rem 0; font-size: .8rem; }
+.history-item strong { display: block; margin-bottom: .2rem; }
+.history-item span { color: #888; }
+.vote-title { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
+.vote-title input { width: min(360px, 70%); padding: .5rem .7rem; border: 2px solid #e0e0e0; border-radius: 7px; }
+.vote-title button { padding: .5rem .8rem; border: 0; border-radius: 7px; background: #6c5ce7; color: #fff; cursor: pointer; }
 .header { text-align: center; margin-bottom: 2rem; }
 .header h1 { font-size: 2rem; }
 .header .room-id { font-size: .95rem; color: #888; margin-top: .25rem; }
@@ -35,8 +48,9 @@ body {
   display: flex; align-items: center; gap: .6rem;
   padding: .5rem 1rem .5rem .5rem; background: #fff; border-radius: 12px;
   font-size: .95rem; font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  margin-bottom: .4rem; width: 240px;
+  margin-bottom: .4rem; width: 280px; position: relative; overflow: hidden;
 }
+.participant > :not(.timeout-track) { position: relative; z-index: 1; }
 .participant .status-card {
   width: 32px; height: 42px; border-radius: 6px; display: flex;
   align-items: center; justify-content: center; font-size: .8rem;
@@ -47,6 +61,25 @@ body {
 }
 .participant .status-card.filled {
   border: 2px solid #6c5ce7; background: #6c5ce7;
+}
+.participant .status-card.filled::after { content: '\2713'; color: #fff; font-size: 1rem; }
+.participant .status-card.disconnected {
+  border: 2px solid #e74c3c; background: #fff2f0; color: #e74c3c;
+}
+.participant .status-card.disconnected::after { content: '\2715'; font-size: 1.05rem; }
+.participant.disconnected { opacity: .72; }
+.participant.disconnected::before {
+  content: 'No connection'; position: absolute; right: .7rem; top: .25rem;
+  color: #e74c3c; font-size: .65rem; font-weight: 700;
+}
+.timeout-track {
+  position: absolute; inset: 0; height: auto; background: #fff; z-index: 0;
+  pointer-events: none;
+}
+.timeout-fill {
+  display: block; height: 100%; width: 0;
+  background-color: #fff;
+  transition: width 1s linear, background-color 1s linear; opacity: .95;
 }
 .participant .status-card.revealed {
   border: 2px solid #6c5ce7; background: #6c5ce7; color: #fff;
@@ -82,6 +115,10 @@ body {
   color: #6c5ce7; margin-bottom: 1rem; padding: .5rem;
   background: rgba(108,92,231,.08); border-radius: 10px;
 }
+.confirm-bar { text-align: center; min-height: 2.5rem; margin-bottom: 1rem; color: #6c5ce7; font-weight: 600; }
+.confirm-bar button { margin-left: .5rem; padding: .45rem .8rem; border: 0; border-radius: 6px; cursor: pointer; font-weight: 700; }
+.confirm-yes { background: #6c5ce7; color: #fff; }
+.confirm-no { background: #eee; color: #444; }
 
 .countdown-overlay {
   display: none; position: fixed; inset: 0; background: rgba(26,26,46,.85);
@@ -97,15 +134,29 @@ body {
   60% { transform: scale(1.2); }
   100% { transform: scale(1); opacity: 1; }
 }
+@keyframes flipIn { from { transform: perspective(400px) rotateY(90deg); } to { transform: perspective(400px) rotateY(0); } }
+.participant .status-card.revealed, .participant .status-card.unrevealed { animation: flipIn .45s ease both; }
 
 .bottom-actions { text-align: center; }
+@media (max-width: 1100px) {
+  .history { position: static; width: 100%; max-height: none; margin-bottom: 1rem; }
+  .history-item { display: inline-block; width: 48%; vertical-align: top; margin-right: 1%; }
+}
 </style>
 </head>
 <body>
 <div class="container">
+  <aside class="history" id="historyPanel">
+    <h2>Previous votes</h2>
+    <div id="historyList" class="history-empty">No completed votes yet</div>
+  </aside>
   <div class="header">
     <h1 id="roomTitle">Scrum Poker</h1>
     <div class="room-id" id="roomIdDisplay"></div>
+    <div class="vote-title">
+      <input id="voteTitle" maxlength="120" placeholder="What are we estimating?">
+      <button onclick="saveTitle()">Set title</button>
+    </div>
     <div class="actions">
       <button class="btn-sm btn-outline" onclick="copyLink(this)">Copy Link</button>
       <button class="btn-sm btn-outline" onclick="window.location.href='/'">Home</button>
@@ -117,6 +168,7 @@ body {
   <div id="averageDisplay" class="average"></div>
 
   <div class="cards" id="cards"></div>
+  <div class="confirm-bar" id="confirmBar"></div>
 
   <div class="vote-status" id="voteStatus">Waiting for players...</div>
 
@@ -138,8 +190,10 @@ const VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89
 
 let state = null;
 let myVote = null;
+let pendingVote = null;
 let revealedVotes = null;
 let countdownActive = false;
+let timeoutRemaining = null;
 let roomName = 'Scrum Poker';
 
 const participantId = localStorage.getItem('sp-participant-id') || crypto.randomUUID();
@@ -174,6 +228,7 @@ socket.emit('join-room', { roomId, username, participantId });
 socket.on('room-state', s => {
   state = s;
   revealedVotes = s.revealed ? s.votes : null;
+  timeoutRemaining = s.timeoutRemaining;
   render();
 });
 
@@ -200,6 +255,11 @@ socket.on('countdown', n => {
   }
 });
 
+socket.on('round-timeout', remaining => {
+  timeoutRemaining = remaining;
+  updateTimeoutBars();
+});
+
 socket.on('reveal', votes => {
   revealedVotes = votes;
   render();
@@ -207,7 +267,9 @@ socket.on('reveal', votes => {
 
 socket.on('reset-votes', () => {
   myVote = null;
+  pendingVote = null;
   revealedVotes = null;
+  timeoutRemaining = null;
 });
 
 socket.on('error-msg', msg => { alert(msg); window.location.href = '/'; });
@@ -219,13 +281,19 @@ function render() {
 
   // title
   document.getElementById('roomTitle').textContent = roomName;
+  const titleEl = document.getElementById('voteTitle');
+  if (document.activeElement !== titleEl) titleEl.value = state.title || '';
 
   // participants
   const pEl = document.getElementById('participants');
   pEl.innerHTML = state.users.map(u => {
     let statusClass = 'empty';
     let statusContent = '';
-    if (state.revealed && revealedVotes) {
+    const disconnected = !u.connected && !state.revealed;
+    if (disconnected) {
+      statusClass = 'disconnected';
+      statusContent = '';
+    } else if (state.revealed && revealedVotes) {
       if (u.id in revealedVotes) {
         statusClass = 'revealed';
         statusContent = esc(revealedVotes[u.id]);
@@ -235,10 +303,15 @@ function render() {
       }
     } else if (u.voted) {
       statusClass = 'filled';
+      statusContent = '';
     }
-    return `<div class="participant">
+    const timeoutActive = timeoutRemaining !== null && !u.voted && u.connected && !state.revealed;
+    const timeoutProgress = timeoutActive ? Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100)) : 0;
+    const timeoutBar = timeoutActive ? `<span class="timeout-track" aria-label="Voting timeout"><span class="timeout-fill" style="width:${timeoutProgress}%;background-color:${timeoutColor(timeoutProgress)}"></span></span>` : '';
+    return `<div class="participant${disconnected ? ' disconnected' : ''}" data-user-id="${esc(u.id)}"${disconnected ? ' title="No connection"' : ''}>
       <span class="status-card ${statusClass}">${statusContent}</span>
-      ${esc(u.username)}
+      <span class="participant-name">${esc(u.username)}</span>
+      ${timeoutBar}
     </div>`;
   }).join('');
 
@@ -268,10 +341,20 @@ function render() {
   const cEl = document.getElementById('cards');
   cEl.className = state.revealed ? 'cards cards-disabled' : 'cards';
   cEl.innerHTML = VALUES.map(v => {
-    const selected = !state.revealed && myVote === v ? 'selected' : '';
+    const selected = !state.revealed && pendingVote === v ? 'selected' : '';
+    const confirmed = !state.revealed && myVote === v ? 'confirmed' : '';
     const cls = v.length > 2 ? 'card small' : 'card';
-    return `<div class="${cls} ${selected}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
+    return `<div class="${cls} ${selected} ${confirmed}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
   }).join('');
+
+  const confirmEl = document.getElementById('confirmBar');
+  if (!state.revealed && pendingVote !== null && pendingVote !== myVote) {
+    confirmEl.innerHTML = `Confirm ${esc(pendingVote)}? <button class="confirm-yes" onclick="confirmVote()">Yes</button><button class="confirm-no" onclick="cancelVote()">No</button>`;
+  } else {
+    confirmEl.textContent = '';
+  }
+
+  renderHistory();
 
   // reset button
   document.getElementById('resetBtn').style.display = state.revealed ? 'inline-block' : 'none';
@@ -281,15 +364,50 @@ function render() {
   document.getElementById('forceRevealBtn').style.display = showForceReveal ? 'inline-block' : 'none';
 }
 
+function updateTimeoutBars() {
+  const progress = timeoutRemaining === null
+    ? 0
+    : Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100));
+  document.querySelectorAll('.timeout-fill').forEach(fill => {
+    fill.style.width = `${progress}%`;
+    fill.style.backgroundColor = timeoutColor(progress);
+  });
+}
+
+function timeoutColor(progress) {
+  const start = [255, 255, 255];
+  const middle = [255, 152, 0];
+  const end = [240, 0, 0];
+  const from = progress < 55 ? start : middle;
+  const to = progress < 55 ? middle : end;
+  const range = progress < 55 ? 55 : 45;
+  const offset = progress < 55 ? 0 : 55;
+  const ratio = (progress - offset) / range;
+  const rgb = from.map((value, index) => Math.round(value + (to[index] - value) * ratio));
+  return `rgb(${rgb.join(', ')})`;
+}
+
 function selectCard(value) {
   if (state && (state.revealed || countdownActive)) return;
-  myVote = value;
-  if (state) {
-    const me = state.users.find(u => u.id === participantId);
-    if (me) me.voted = true;
-  }
-  socket.emit('vote', { value });
+  pendingVote = value;
   render();
+}
+
+function confirmVote() {
+  if (pendingVote === null || !state || state.revealed || countdownActive) return;
+  myVote = pendingVote;
+  socket.emit('vote', { value: myVote });
+  render();
+}
+
+function cancelVote() {
+  pendingVote = null;
+  render();
+}
+
+function saveTitle() {
+  if (!state || state.revealed) return;
+  socket.emit('set-title', document.getElementById('voteTitle').value);
 }
 
 function forceReveal() {
@@ -298,7 +416,25 @@ function forceReveal() {
 
 function resetVotes() {
   myVote = null;
+  pendingVote = null;
   socket.emit('reset');
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  const history = state.history || [];
+  if (history.length === 0) {
+    list.className = 'history-empty';
+    list.textContent = 'No completed votes yet';
+    return;
+  }
+  list.className = '';
+  list.innerHTML = history.map(round => {
+    const nums = Object.values(round.votes).map(v => parseFloat(v)).filter(v => !isNaN(v));
+    const average = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+    const formatted = average === null ? 'No numeric votes' : `Average: ${average % 1 === 0 ? average.toFixed(0) : average.toFixed(1)}`;
+    return `<div class="history-item"><strong>${esc(round.title)}</strong><span>${formatted}</span></div>`;
+  }).join('');
 }
 
 function copyLink(btn) {
