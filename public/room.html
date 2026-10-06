@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Scrum Poker Room</title>
+<link rel="icon" href="data:,">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,8 +35,12 @@ body {
   display: flex; align-items: center; gap: .6rem;
   padding: .5rem 1rem .5rem .5rem; background: #fff; border-radius: 12px;
   font-size: .95rem; font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  margin-bottom: .4rem; width: 240px;
+  margin-bottom: .4rem; width: 280px; position: relative; overflow: hidden;
+  animation: participantIn .28s ease both;
 }
+.participant::after { content: ''; width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #35b779; box-shadow: 0 0 0 3px rgba(53,183,121,.14); }
+.participant.disconnected::after { background: #e74c3c; box-shadow: 0 0 0 3px rgba(231,76,60,.12); }
+.participant > :not(.timeout-track) { position: relative; z-index: 1; }
 .participant .status-card {
   width: 32px; height: 42px; border-radius: 6px; display: flex;
   align-items: center; justify-content: center; font-size: .8rem;
@@ -47,6 +52,27 @@ body {
 .participant .status-card.filled {
   border: 2px solid #6c5ce7; background: #6c5ce7;
 }
+.participant .status-card.filled::after { content: '\2713'; color: #fff; font-size: 1rem; }
+.participant .status-card.disconnected {
+  border: 2px solid #e74c3c; background: #fff2f0; color: #e74c3c;
+}
+.participant .status-card.disconnected::after { content: '\2715'; font-size: 1.05rem; }
+.participant.disconnected { opacity: .72; }
+.participant.disconnected::before {
+  content: 'No connection'; position: absolute; right: .7rem; top: .25rem;
+  color: #e74c3c; font-size: .65rem; font-weight: 700;
+}
+.timeout-track {
+  display: block; position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+  height: auto; background: #fff; z-index: 0;
+  pointer-events: none;
+}
+.timeout-fill {
+  display: block; position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+  background-color: #fff;
+  transition: width 1s linear, background-color 1s linear; opacity: .95;
+}
+.participant.urgent { animation: timeoutShake var(--shake-duration, .6s) ease-in-out infinite; animation-delay: var(--shake-delay, 0s); }
 .participant .status-card.revealed {
   border: 2px solid #6c5ce7; background: #6c5ce7; color: #fff;
   font-size: .95rem;
@@ -60,6 +86,9 @@ body {
   text-align: center; font-size: 1rem; color: #888; margin-bottom: 1rem;
   min-height: 1.5rem;
 }
+.round-status { text-align: center; color: #6c5ce7; font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .25rem; }
+.activity { min-height: 1.4rem; margin: 0 auto 1rem; text-align: center; color: #999; font-size: .78rem; }
+.activity-item { animation: activityIn .3s ease both; }
 
 .cards {
   display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center;
@@ -81,6 +110,11 @@ body {
   color: #6c5ce7; margin-bottom: 1rem; padding: .5rem;
   background: rgba(108,92,231,.08); border-radius: 10px;
 }
+.average-pop { animation: averagePop .5s ease both; }
+.confirm-bar { text-align: center; min-height: 2.5rem; margin-bottom: 1rem; color: #6c5ce7; font-weight: 600; }
+.confirm-bar button { margin-left: .5rem; padding: .45rem .8rem; border: 0; border-radius: 6px; cursor: pointer; font-weight: 700; }
+.confirm-yes { background: #6c5ce7; color: #fff; }
+.confirm-no { background: #eee; color: #444; }
 
 .countdown-overlay {
   display: none; position: fixed; inset: 0; background: rgba(26,26,46,.85);
@@ -95,6 +129,20 @@ body {
   0% { transform: scale(0); opacity: 0; }
   60% { transform: scale(1.2); }
   100% { transform: scale(1); opacity: 1; }
+}
+@keyframes flipIn { from { transform: perspective(400px) rotateY(90deg); } to { transform: perspective(400px) rotateY(0); } }
+.participant .status-card.revealed, .participant .status-card.unrevealed { animation: flipIn .45s ease both; animation-delay: var(--reveal-delay, 0s); }
+@keyframes timeoutShake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(calc(var(--shake-distance, 1px) * -.7), calc(var(--shake-distance, 1px) * .5)); }
+  50% { transform: translate(var(--shake-distance, 1px), calc(var(--shake-distance, 1px) * -.5)); }
+  75% { transform: translate(calc(var(--shake-distance, 1px) * -.5), var(--shake-distance, 1px)); }
+}
+@keyframes activityIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes averagePop { 0% { transform: scale(.92); opacity: .35; } 70% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes participantIn { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
 
 .bottom-actions { text-align: center; }
@@ -116,8 +164,11 @@ body {
   <div id="averageDisplay" class="average"></div>
 
   <div class="cards" id="cards"></div>
+  <div class="confirm-bar" id="confirmBar"></div>
 
   <div class="vote-status" id="voteStatus">Waiting for players...</div>
+  <div class="round-status" id="roundStatus">Choosing</div>
+  <div class="activity" id="activity" aria-live="polite"></div>
 
   <div class="participants" id="participants"></div>
 
@@ -137,8 +188,30 @@ const VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89
 
 let state = null;
 let myVote = null;
+let pendingVote = null;
 let revealedVotes = null;
 let countdownActive = false;
+let timeoutRemaining = null;
+let roomName = 'Scrum Poker';
+let activities = [];
+let lastAverage = null;
+
+const participantId = localStorage.getItem('sp-participant-id') || crypto.randomUUID();
+localStorage.setItem('sp-participant-id', participantId);
+
+fetch('/api/rooms/' + encodeURIComponent(roomId))
+  .then(res => res.ok ? res.json() : Promise.reject(new Error('Room not found')))
+  .then(room => {
+    roomName = room.name || 'Scrum Poker';
+    document.getElementById('roomTitle').textContent = roomName;
+    document.title = roomName + ' - Scrum Poker';
+  })
+  .catch(() => {
+    const rooms = JSON.parse(localStorage.getItem('sp-rooms') || '[]');
+    localStorage.setItem('sp-rooms', JSON.stringify(rooms.filter(id => id !== roomId)));
+    alert('Room not found');
+    window.location.href = '/';
+  });
 
 // -- username --
 let username = localStorage.getItem('sp-username');
@@ -149,12 +222,21 @@ if (!username) {
 }
 
 // -- join room --
-socket.emit('join-room', { roomId, username });
+socket.emit('join-room', { roomId, username, participantId });
 
 // -- socket events --
 socket.on('room-state', s => {
   state = s;
+  revealedVotes = s.revealed ? s.votes : null;
+  timeoutRemaining = s.timeoutRemaining;
+  activities = s.activities || [];
   render();
+});
+
+socket.on('room-activity', activity => {
+  activities.unshift(activity);
+  activities = activities.slice(0, 12);
+  renderActivity(activity);
 });
 
 socket.on('voted', ({ count, total }) => {
@@ -167,6 +249,7 @@ socket.on('countdown', n => {
   const num = document.getElementById('countdownNum');
   overlay.style.display = 'flex';
   countdownActive = true;
+  document.getElementById('roundStatus').textContent = 'Revealing';
   if (n > 0) {
     num.textContent = n;
     num.className = 'num';
@@ -180,6 +263,11 @@ socket.on('countdown', n => {
   }
 });
 
+socket.on('round-timeout', remaining => {
+  timeoutRemaining = remaining;
+  updateTimeoutBars();
+});
+
 socket.on('reveal', votes => {
   revealedVotes = votes;
   render();
@@ -187,7 +275,10 @@ socket.on('reveal', votes => {
 
 socket.on('reset-votes', () => {
   myVote = null;
+  pendingVote = null;
   revealedVotes = null;
+  timeoutRemaining = null;
+  lastAverage = null;
 });
 
 socket.on('error-msg', msg => { alert(msg); window.location.href = '/'; });
@@ -198,14 +289,18 @@ function render() {
   if (!state) return;
 
   // title
-  document.getElementById('roomTitle').textContent = state.revealed ? 'Results' : 'Scrum Poker';
+  document.getElementById('roomTitle').textContent = roomName;
 
   // participants
   const pEl = document.getElementById('participants');
-  pEl.innerHTML = state.users.map(u => {
+  pEl.innerHTML = state.users.map((u, rowIndex) => {
     let statusClass = 'empty';
     let statusContent = '';
-    if (state.revealed && revealedVotes) {
+    const disconnected = !u.connected && !state.revealed;
+    if (disconnected) {
+      statusClass = 'disconnected';
+      statusContent = '';
+    } else if (state.revealed && revealedVotes) {
       if (u.id in revealedVotes) {
         statusClass = 'revealed';
         statusContent = esc(revealedVotes[u.id]);
@@ -215,10 +310,19 @@ function render() {
       }
     } else if (u.voted) {
       statusClass = 'filled';
+      statusContent = '';
     }
-    return `<div class="participant">
+    const timeoutActive = timeoutRemaining !== null && !u.voted && u.connected && !state.revealed;
+    const timeoutProgress = timeoutActive ? Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100)) : 0;
+    const timeoutBar = timeoutActive ? `<span class="timeout-track" aria-label="Voting timeout"><span class="timeout-fill" style="width:${timeoutProgress}%;background-color:${timeoutColor(timeoutProgress)}"></span></span>` : '';
+    const urgency = timeoutActive && timeoutProgress >= 50 ? ' urgent' : '';
+    const shake = shakeStyle(timeoutProgress, rowIndex);
+    const revealStyle = state.revealed ? `--reveal-delay:${(rowIndex * .12).toFixed(2)}s;` : '';
+    const urgencyStyle = urgency ? `--shake-distance:${shake.distance};--shake-duration:${shake.duration};--shake-delay:${shake.delay}` : '';
+    return `<div class="participant${disconnected ? ' disconnected' : ''}${urgency}" style="${revealStyle}${urgencyStyle}" data-row-index="${rowIndex}" data-user-id="${esc(u.id)}"${disconnected ? ' title="No connection"' : ''}>
       <span class="status-card ${statusClass}">${statusContent}</span>
-      ${esc(u.username)}
+      <span class="participant-name">${esc(u.username)}</span>
+      ${timeoutBar}
     </div>`;
   }).join('');
 
@@ -228,15 +332,26 @@ function render() {
   } else {
     document.getElementById('voteStatus').textContent = `Votes: ${state.votedCount} / ${state.totalUsers}`;
   }
+  const roundStatus = document.getElementById('roundStatus');
+  if (state.revealed) roundStatus.textContent = 'Results';
+  else if (countdownActive) roundStatus.textContent = 'Revealing';
+  else if (state.votedCount === state.totalUsers && state.totalUsers > 0) roundStatus.textContent = 'Almost ready';
+  else roundStatus.textContent = state.votedCount > 0 ? 'Choosing' : 'Waiting for votes';
 
   // average
   const avgEl = document.getElementById('averageDisplay');
   if (state.revealed && revealedVotes) {
-    const nums = state.users.map(u => parseFloat(revealedVotes[u.id])).filter(v => !isNaN(v));
+    const nums = Object.values(revealedVotes).map(v => parseFloat(v)).filter(v => !isNaN(v));
     if (nums.length > 0) {
       const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
       avgEl.textContent = `Average: ${avg % 1 === 0 ? avg.toFixed(0) : avg.toFixed(1)}`;
       avgEl.style.display = 'block';
+      if (lastAverage !== avg) {
+        avgEl.classList.remove('average-pop');
+        void avgEl.offsetWidth;
+        avgEl.classList.add('average-pop');
+        lastAverage = avg;
+      }
     } else {
       avgEl.style.display = 'none';
     }
@@ -248,10 +363,18 @@ function render() {
   const cEl = document.getElementById('cards');
   cEl.className = state.revealed ? 'cards cards-disabled' : 'cards';
   cEl.innerHTML = VALUES.map(v => {
-    const selected = !state.revealed && myVote === v ? 'selected' : '';
+    const selected = !state.revealed && pendingVote === v ? 'selected' : '';
+    const confirmed = !state.revealed && myVote === v ? 'confirmed' : '';
     const cls = v.length > 2 ? 'card small' : 'card';
-    return `<div class="${cls} ${selected}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
+    return `<div class="${cls} ${selected} ${confirmed}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
   }).join('');
+
+  const confirmEl = document.getElementById('confirmBar');
+  if (!state.revealed && pendingVote !== null && pendingVote !== myVote) {
+    confirmEl.innerHTML = `Confirm ${esc(pendingVote)}? <button class="confirm-yes" onclick="confirmVote()">Yes</button><button class="confirm-no" onclick="cancelVote()">No</button>`;
+  } else {
+    confirmEl.textContent = '';
+  }
 
   // reset button
   document.getElementById('resetBtn').style.display = state.revealed ? 'inline-block' : 'none';
@@ -259,16 +382,73 @@ function render() {
   // force reveal button — show when some voted but not all and not during countdown/reveal
   const showForceReveal = !state.revealed && !countdownActive && state.votedCount > 0 && state.votedCount < state.totalUsers;
   document.getElementById('forceRevealBtn').style.display = showForceReveal ? 'inline-block' : 'none';
+  renderActivity();
+}
+
+function renderActivity(latest) {
+  const activity = document.getElementById('activity');
+  const item = latest || activities[0];
+  if (!item) { activity.textContent = ''; return; }
+  activity.innerHTML = `<span class="activity-item">${esc(item.username)} ${item.type === 'join' ? 'joined the room' : 'left the room'}</span>`;
+}
+
+function updateTimeoutBars() {
+  const progress = timeoutRemaining === null
+    ? 0
+    : Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100));
+  document.querySelectorAll('.timeout-fill').forEach(fill => {
+    fill.style.width = `${progress}%`;
+    fill.style.backgroundColor = timeoutColor(progress);
+    const row = fill.closest('.participant');
+    row?.classList.toggle('urgent', progress >= 50);
+    if (row) {
+      const style = shakeStyle(progress, row?.dataset.rowIndex || '0');
+      row.style.setProperty('--shake-distance', style.distance);
+      row.style.setProperty('--shake-duration', style.duration);
+      row.style.setProperty('--shake-delay', style.delay);
+    }
+  });
+}
+
+function shakeStyle(progress, rowIndex) {
+  const intensity = Math.max(0, Math.min(1, (progress - 50) / 50));
+  const phase = (Number(rowIndex) * 0.37) % 1;
+  const duration = 0.6 - intensity * 0.2;
+  return {
+    distance: `${(0.5 + intensity * 1.5).toFixed(1)}px`,
+    duration: `${duration.toFixed(2)}s`,
+    delay: `-${(duration * phase).toFixed(2)}s`
+  };
+}
+
+function timeoutColor(progress) {
+  const start = [255, 255, 255];
+  const middle = [255, 152, 0];
+  const end = [240, 0, 0];
+  const from = progress < 55 ? start : middle;
+  const to = progress < 55 ? middle : end;
+  const range = progress < 55 ? 55 : 45;
+  const offset = progress < 55 ? 0 : 55;
+  const ratio = (progress - offset) / range;
+  const rgb = from.map((value, index) => Math.round(value + (to[index] - value) * ratio));
+  return `rgb(${rgb.join(', ')})`;
 }
 
 function selectCard(value) {
   if (state && (state.revealed || countdownActive)) return;
-  myVote = value;
-  if (state) {
-    const me = state.users.find(u => u.id === socket.id);
-    if (me) me.voted = true;
-  }
-  socket.emit('vote', { value });
+  pendingVote = value;
+  render();
+}
+
+function confirmVote() {
+  if (pendingVote === null || !state || state.revealed || countdownActive) return;
+  myVote = pendingVote;
+  socket.emit('vote', { value: myVote });
+  render();
+}
+
+function cancelVote() {
+  pendingVote = null;
   render();
 }
 
@@ -278,6 +458,7 @@ function forceReveal() {
 
 function resetVotes() {
   myVote = null;
+  pendingVote = null;
   socket.emit('reset');
 }
 
