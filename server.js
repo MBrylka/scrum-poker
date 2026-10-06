@@ -148,6 +148,7 @@ io.on('connection', (socket) => {
         users: {}, votes: {}, revealedVotes: null, revealed: false,
         countdown: null, timeoutTimer: null, timeoutRemaining: null
       };
+      roomState[roomId].activities = [];
     }
 
     const state = roomState[roomId];
@@ -181,6 +182,7 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     io.to(roomId).emit('room-state', serializeState(roomId));
+    if (isNewParticipant) addActivity(roomId, 'join', username);
   });
 
   socket.on('vote', ({ value }) => {
@@ -252,6 +254,7 @@ io.on('connection', (socket) => {
         if (user.sockets.size > 0 || roomState[currentRoom] !== state) return;
         delete state.users[participantId];
         if (!state.revealed) delete state.votes[participantId];
+        addActivity(currentRoom, 'leave', user.username);
         if (Object.keys(state.users).length === 0) {
           delete roomState[currentRoom];
         } else {
@@ -295,6 +298,14 @@ function startRoundTimeout(roomId) {
   }, 1000);
 }
 
+function addActivity(roomId, type, username) {
+  const state = roomState[roomId];
+  if (!state) return;
+  state.activities.unshift({ type, username, at: new Date().toISOString() });
+  state.activities = state.activities.slice(0, 12);
+  io.to(roomId).emit('room-activity', state.activities[0]);
+}
+
 function startCountdown(roomId) {
   const state = roomState[roomId];
   let count = 3;
@@ -331,6 +342,7 @@ function serializeState(roomId) {
     })),
     revealed: state.revealed,
     votes: state.revealed ? { ...state.revealedVotes } : {},
+    activities: state.activities || [],
     timeoutRemaining: state.timeoutRemaining,
     totalUsers: Object.keys(state.users).length,
     votedCount: Object.keys(state.votes).length

@@ -51,3 +51,16 @@ The admin panel is available at `/admin`.
 
 `ADMIN_PASSWORD` is required at startup. Set `TRUST_PROXY` to the number of trusted
 proxy hops when the application is deployed behind a reverse proxy.
+
+## Experience Enhancements
+
+The room experience is intentionally playful without using audio:
+
+- Live presence indicators and a small join/leave activity feed.
+- Smooth participant enter/exit transitions.
+- Staggered card-flip reveals and animated average values.
+- Clear round status messages such as choosing, almost ready, revealing, and results.
+- Gentle vote confirmation feedback and timeout urgency.
+- Room sharing improvements, including invite QR codes and room accent colors.
+- Accessibility support including keyboard controls, visible focus states, and reduced motion.
+- Optional calm mode for disabling shakes, celebration effects, and other intense motion.
