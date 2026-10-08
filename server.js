@@ -18,8 +18,13 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
   )
 `);
+db.prepare("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('theme', 'light')").run();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 if (!ADMIN_PASSWORD) {
@@ -52,6 +57,11 @@ const app = express();
 const trustProxy = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
 app.set('trust proxy', Number.isFinite(trustProxy) && trustProxy > 0 ? trustProxy : false);
 app.use(express.json());
+app.get('/api/theme.js', (req, res) => {
+  const theme = db.prepare("SELECT value FROM app_settings WHERE key = 'theme'").get()?.value || 'light';
+  res.set('Cache-Control', 'no-store');
+  res.type('application/javascript').send(`document.documentElement.dataset.appTheme = ${JSON.stringify(theme)};`);
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/room/:id', (req, res) => {
@@ -100,6 +110,22 @@ app.get('/api/admin/rooms', adminLimiter, (req, res) => {
   if (!requireAdmin(req, res)) return;
   const rooms = db.prepare('SELECT id, name, created_at FROM rooms ORDER BY created_at DESC').all();
   res.json(rooms);
+});
+
+app.get('/api/admin/theme', adminLimiter, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const theme = db.prepare("SELECT value FROM app_settings WHERE key = 'theme'").get()?.value || 'light';
+  res.json({ theme });
+});
+
+app.put('/api/admin/theme', adminLimiter, (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { theme } = req.body || {};
+  if (!['light', 'halloween'].includes(theme)) {
+    return res.status(400).json({ error: 'Invalid theme' });
+  }
+  db.prepare("UPDATE app_settings SET value = ? WHERE key = 'theme'").run(theme);
+  res.json({ theme });
 });
 
 app.delete('/api/admin/rooms/:id', adminLimiter, (req, res) => {
