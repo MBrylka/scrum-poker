@@ -111,10 +111,6 @@ body {
   background: rgba(108,92,231,.08); border-radius: 10px;
 }
 .average-pop { animation: averagePop .5s ease both; }
-.confirm-bar { text-align: center; min-height: 2.5rem; margin-bottom: 1rem; color: #6c5ce7; font-weight: 600; }
-.confirm-bar button { margin-left: .5rem; padding: .45rem .8rem; border: 0; border-radius: 6px; cursor: pointer; font-weight: 700; }
-.confirm-yes { background: #6c5ce7; color: #fff; }
-.confirm-no { background: #eee; color: #444; }
 
 .countdown-overlay {
   display: none; position: fixed; inset: 0; background: rgba(26,26,46,.85);
@@ -164,8 +160,6 @@ body {
   <div id="averageDisplay" class="average"></div>
 
   <div class="cards" id="cards"></div>
-  <div class="confirm-bar" id="confirmBar"></div>
-
   <div class="vote-status" id="voteStatus">Waiting for players...</div>
   <div class="round-status" id="roundStatus">Choosing</div>
   <div class="activity" id="activity" aria-live="polite"></div>
@@ -188,7 +182,6 @@ const VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89
 
 let state = null;
 let myVote = null;
-let pendingVote = null;
 let revealedVotes = null;
 let countdownActive = false;
 let timeoutRemaining = null;
@@ -275,10 +268,12 @@ socket.on('reveal', votes => {
 
 socket.on('reset-votes', () => {
   myVote = null;
-  pendingVote = null;
   revealedVotes = null;
   timeoutRemaining = null;
   lastAverage = null;
+  countdownActive = false;
+  document.getElementById('countdownOverlay').style.display = 'none';
+  render();
 });
 
 socket.on('error-msg', msg => { alert(msg); window.location.href = '/'; });
@@ -313,7 +308,7 @@ function render() {
       statusContent = '';
     }
     const timeoutActive = timeoutRemaining !== null && !u.voted && u.connected && !state.revealed;
-    const timeoutProgress = timeoutActive ? Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100)) : 0;
+    const timeoutProgress = timeoutActive ? timeoutProgressFor(timeoutRemaining) : 0;
     const timeoutBar = timeoutActive ? `<span class="timeout-track" aria-label="Voting timeout"><span class="timeout-fill" style="width:${timeoutProgress}%;background-color:${timeoutColor(timeoutProgress)}"></span></span>` : '';
     const urgency = timeoutActive && timeoutProgress >= 50 ? ' urgent' : '';
     const shake = shakeStyle(timeoutProgress, rowIndex);
@@ -363,18 +358,10 @@ function render() {
   const cEl = document.getElementById('cards');
   cEl.className = state.revealed ? 'cards cards-disabled' : 'cards';
   cEl.innerHTML = VALUES.map(v => {
-    const selected = !state.revealed && pendingVote === v ? 'selected' : '';
-    const confirmed = !state.revealed && myVote === v ? 'confirmed' : '';
+    const selected = !state.revealed && myVote === v ? 'selected' : '';
     const cls = v.length > 2 ? 'card small' : 'card';
-    return `<div class="${cls} ${selected} ${confirmed}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
+    return `<div class="${cls} ${selected}" data-value="${v}" onclick="selectCard('${v}')">${v}</div>`;
   }).join('');
-
-  const confirmEl = document.getElementById('confirmBar');
-  if (!state.revealed && pendingVote !== null && pendingVote !== myVote) {
-    confirmEl.innerHTML = `Confirm ${esc(pendingVote)}? <button class="confirm-yes" onclick="confirmVote()">Yes</button><button class="confirm-no" onclick="cancelVote()">No</button>`;
-  } else {
-    confirmEl.textContent = '';
-  }
 
   // reset button
   document.getElementById('resetBtn').style.display = state.revealed ? 'inline-block' : 'none';
@@ -393,9 +380,7 @@ function renderActivity(latest) {
 }
 
 function updateTimeoutBars() {
-  const progress = timeoutRemaining === null
-    ? 0
-    : Math.max(0, Math.min(100, ((15 - timeoutRemaining) / 15) * 100));
+  const progress = timeoutRemaining === null ? 0 : timeoutProgressFor(timeoutRemaining);
   document.querySelectorAll('.timeout-fill').forEach(fill => {
     fill.style.width = `${progress}%`;
     fill.style.backgroundColor = timeoutColor(progress);
@@ -436,20 +421,14 @@ function timeoutColor(progress) {
 
 function selectCard(value) {
   if (state && (state.revealed || countdownActive)) return;
-  pendingVote = value;
-  render();
-}
-
-function confirmVote() {
-  if (pendingVote === null || !state || state.revealed || countdownActive) return;
-  myVote = pendingVote;
+  if (!state) return;
+  myVote = value;
   socket.emit('vote', { value: myVote });
   render();
 }
 
-function cancelVote() {
-  pendingVote = null;
-  render();
+function timeoutProgressFor(remaining) {
+  return Math.max(0, Math.min(100, ((25 - remaining) / 25) * 100));
 }
 
 function forceReveal() {
@@ -458,7 +437,6 @@ function forceReveal() {
 
 function resetVotes() {
   myVote = null;
-  pendingVote = null;
   socket.emit('reset');
 }
 
