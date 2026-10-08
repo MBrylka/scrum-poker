@@ -62,6 +62,7 @@ app.get('/api/theme.js', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.type('application/javascript').send(`document.documentElement.dataset.appTheme = ${JSON.stringify(theme)};`);
 });
+app.use('/sounds', express.static(path.join(__dirname, 'sounds')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/room/:id', (req, res) => {

@@ -310,27 +310,34 @@ body {
 
 <script>
 function updateThemeButton() { const dark = document.documentElement.classList.contains('dark'); const button = document.querySelector('.theme-toggle'); button.firstElementChild.textContent = dark ? '☀' : '☾'; button.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); button.title = dark ? 'Switch to light theme' : 'Switch to dark theme'; }
-function toggleTheme() { const dark = document.documentElement.classList.toggle('dark'); localStorage.setItem('sp-theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; updateThemeButton(); updateTimeoutBars(); }
+function toggleTheme() { const dark = document.documentElement.classList.toggle('dark'); localStorage.setItem('sp-theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; playSound('themeToggle'); updateThemeButton(); updateTimeoutBars(); }
 updateThemeButton();
 // Add the matching audio paths when sounds are ready. Null keeps an event silent.
 const SOUND_CONFIG = {
   light: {
-    cardSelect: { src: null, volume: .22 }, reveal: { src: null, volume: .35 },
-    unanimousReveal: { src: null, volume: .5 }, roundReset: { src: null, volume: .25 }, timeoutWarning: { src: null, volume: .3 }
+    cardSelect: { src: '/sounds/button_press.mp3', volume: .22 }, reveal: { src: '/sounds/reveal.mp3', volume: .35 }, revealCountdown: { src: '/sounds/reveal_countdown.mp3', volume: .3 },
+    unanimousReveal: { src: '/sounds/unanimouse-reveal.mp3', volume: .5 }, roundReset: { src: '/sounds/button_press.mp3', volume: .25 }, timeoutWarning: { src: '/sounds/clock.mp3', volume: .3, loop: true },
+    themeToggle: { src: '/sounds/toggle_theme.mp3', volume: .3 }, soundToggle: { src: '/sounds/button_press.mp3', volume: .25 }, buttonHover: { src: '/sounds/button_hover.mp3', volume: .12 }
   },
   halloween: {
-    cardSelect: { src: null, volume: .22 }, reveal: { src: null, volume: .35 },
-    unanimousReveal: { src: null, volume: .5 }, roundReset: { src: null, volume: .25 }, timeoutWarning: { src: null, volume: .3 }
+    cardSelect: { src: '/sounds/button_press.mp3', volume: .22 }, reveal: { src: '/sounds/reveal.mp3', volume: .35 }, revealCountdown: { src: '/sounds/reveal_countdown.mp3', volume: .3 },
+    unanimousReveal: { src: '/sounds/unanimouse-reveal.mp3', volume: .5 }, roundReset: { src: '/sounds/button_press.mp3', volume: .25 }, timeoutWarning: { src: '/sounds/clock.mp3', volume: .3, loop: true },
+    themeToggle: { src: '/sounds/toggle_theme.mp3', volume: .3 }, soundToggle: { src: '/sounds/button_press.mp3', volume: .25 }, buttonHover: { src: '/sounds/button_hover.mp3', volume: .12 }
   }
 };
 let soundMuted = localStorage.getItem('sp-sound-muted') !== 'false';
+const activeSounds = {};
 function updateSoundButton() { const button = document.querySelector('.sound-toggle'); button.firstElementChild.textContent = soundMuted ? '🔇' : '🔊'; button.setAttribute('aria-label', soundMuted ? 'Enable celebration sounds' : 'Mute celebration sounds'); button.title = soundMuted ? 'Celebration sounds are muted' : 'Celebration sounds are enabled'; }
-function toggleSound() { soundMuted = !soundMuted; localStorage.setItem('sp-sound-muted', soundMuted); updateSoundButton(); }
+function toggleSound() { const enabling = soundMuted; soundMuted = !soundMuted; localStorage.setItem('sp-sound-muted', soundMuted); if (soundMuted) stopAllSounds(); updateSoundButton(); if (enabling) playSound('soundToggle'); }
 updateSoundButton();
+document.querySelectorAll('button').forEach(button => button.addEventListener('mouseenter', () => playSound('buttonHover')));
 
 const roomId = window.location.pathname.split('/').pop();
 const socket = io({ transports: ['websocket', 'polling'] });
 document.getElementById('roomIdDisplay').textContent = 'Room: #' + roomId;
+document.getElementById('cards').addEventListener('mouseover', event => {
+  if (event.target.closest('.card')) playSound('buttonHover');
+});
 
 const VALUES = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89', '?'];
 
@@ -345,6 +352,7 @@ let roomName = 'Scrum Poker';
 let activities = [];
 let lastAverage = null;
 let celebratedRevealKey = null;
+let allowRevealCelebration = false;
 
 const participantId = localStorage.getItem('sp-participant-id') || crypto.randomUUID();
 localStorage.setItem('sp-participant-id', participantId);
@@ -402,6 +410,7 @@ socket.on('countdown', n => {
   countdownActive = true;
   document.getElementById('roundStatus').textContent = 'Revealing';
   if (n > 0) {
+    playSound('revealCountdown');
     num.textContent = n;
     num.className = 'num';
   } else {
@@ -417,11 +426,15 @@ socket.on('countdown', n => {
 socket.on('round-timeout', remaining => {
   timeoutRemaining = remaining;
   if (remaining === 5) playSound('timeoutWarning');
+  if (remaining <= 0) stopSound('timeoutWarning');
   updateTimeoutBars();
 });
 
 socket.on('reveal', votes => {
   revealedVotes = votes;
+  allowRevealCelebration = true;
+  stopSound('timeoutWarning');
+  stopSound('revealCountdown');
   playSound('reveal');
   render();
 });
@@ -431,8 +444,10 @@ socket.on('reset-votes', () => {
   localStorage.removeItem(voteStorageKey);
   revealedVotes = null;
   timeoutRemaining = null;
+  stopAllSounds();
   lastAverage = null;
   celebratedRevealKey = null;
+  allowRevealCelebration = false;
   countdownActive = false;
   document.getElementById('countdownOverlay').style.display = 'none';
   playSound('roundReset');
@@ -545,12 +560,13 @@ function syncStoredVote() {
 }
 
 function maybeCelebrateUnanimous() {
-  if (!state?.revealed || !revealedVotes) return;
+  if (!allowRevealCelebration || !state?.revealed || !revealedVotes) return;
   const votes = Object.values(revealedVotes);
   if (!isUnanimous()) return;
   const revealKey = votes.slice().sort().join('|');
   if (celebratedRevealKey === revealKey) return;
   celebratedRevealKey = revealKey;
+  allowRevealCelebration = false;
   celebrateUnanimous();
 }
 
@@ -614,13 +630,29 @@ function isUnanimous() {
   return votes.length >= 2 && new Set(votes).size === 1;
 }
 
-function playSound(eventName) {
+function playSound(eventName, force = false) {
   const theme = document.documentElement.dataset.appTheme === 'halloween' ? 'halloween' : 'light';
   const sound = SOUND_CONFIG[theme][eventName];
-  if (soundMuted || !sound?.src) return;
+  if ((!force && soundMuted) || !sound?.src) return;
+  stopSound(eventName);
   const audio = new Audio(sound.src);
   audio.volume = sound.volume;
+  audio.loop = Boolean(sound.loop);
+  activeSounds[eventName] = audio;
+  audio.addEventListener('ended', () => { if (activeSounds[eventName] === audio) delete activeSounds[eventName]; });
   audio.play().catch(() => {});
+}
+
+function stopSound(eventName) {
+  const audio = activeSounds[eventName];
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  delete activeSounds[eventName];
+}
+
+function stopAllSounds() {
+  Object.keys(activeSounds).forEach(stopSound);
 }
 
 function renderActivity(latest) {

@@ -106,8 +106,10 @@ td.actions { text-align: right; }
 
 <script>
 function updateThemeButton() { const dark = document.documentElement.classList.contains('dark'); const button = document.querySelector('.theme-toggle'); button.firstElementChild.textContent = dark ? '☀' : '☾'; button.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); button.title = dark ? 'Switch to light theme' : 'Switch to dark theme'; }
-function toggleTheme() { const dark = document.documentElement.classList.toggle('dark'); localStorage.setItem('sp-theme', dark ? 'dark' : 'light'); updateThemeButton(); }
+function playUiSound(file) { if (localStorage.getItem('sp-sound-muted') !== 'false') return; const audio = new Audio('/sounds/' + file); audio.volume = .3; audio.play().catch(() => {}); }
+function toggleTheme() { const dark = document.documentElement.classList.toggle('dark'); localStorage.setItem('sp-theme', dark ? 'dark' : 'light'); playUiSound('toggle_theme.mp3'); updateThemeButton(); }
 updateThemeButton();
+document.querySelectorAll('button').forEach(button => button.addEventListener('mouseenter', () => playUiSound('button_hover.mp3')));
 
 function getPwd() { return sessionStorage.getItem('sp-admin-pwd'); }
 
@@ -179,6 +181,7 @@ async function showPanel(rooms) {
       </td>
     </tr>`
   ).join('');
+  tbody.querySelectorAll('button').forEach(button => button.addEventListener('mouseenter', () => playUiSound('button_hover.mp3')));
 }
 
 async function deleteRoom(id) {
