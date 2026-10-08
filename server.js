@@ -26,7 +26,7 @@ if (!ADMIN_PASSWORD) {
   throw new Error('ADMIN_PASSWORD must be set');
 }
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-const ROUND_TIMEOUT_SECONDS = 15;
+const ROUND_TIMEOUT_SECONDS = 25;
 
 // Rate limiters
 const createRoomLimiter = rateLimit({
