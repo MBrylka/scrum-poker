@@ -5,22 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin - Scrum Poker</title>
 <link rel="icon" href="data:,">
+<script>if (localStorage.getItem('sp-theme') === 'dark') document.documentElement.classList.add('dark');</script>
+<script src="/api/theme.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { color-scheme: light; --page-bg: #f0f2f5; --text: #1a1a2e; --muted: #888; --label: #444; --surface: #fff; --border: #eee; --input-border: #e0e0e0; --row-border: #f0f0f0; }
+:root.dark { color-scheme: dark; --page-bg: #171725; --text: #f1f1f8; --muted: #a6a6b5; --label: #d0d0dc; --surface: #242437; --border: #45455d; --input-border: #45455d; --row-border: #38384d; }
+:root[data-app-theme="halloween"] { --page-bg: #fff1e6; --text: #2d1b36; --muted: #806477; --label: #52364f; --surface: #fffaf5; --border: #f0c9aa; --input-border: #e3b28f; --row-border: #f3dccc; }
+:root.dark[data-app-theme="halloween"] { --page-bg: #160d20; --text: #f9e9ff; --muted: #c4a6c9; --label: #e8cfea; --surface: #281633; --border: #5f386b; --input-border: #694379; --row-border: #42254e; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
+  background: var(--page-bg); color: var(--text); min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
 }
 .container { max-width: 700px; width: 100%; padding: 2rem; }
 h1 { text-align: center; font-size: 1.75rem; margin-bottom: .25rem; }
-.subtitle { text-align: center; color: #888; margin-bottom: 2rem; font-size: .9rem; }
-.card { background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.subtitle { text-align: center; color: var(--muted); margin-bottom: 2rem; font-size: .9rem; }
+.card { background: var(--surface); border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 .field { margin-bottom: 1rem; }
-.field label { display: block; font-size: .875rem; font-weight: 600; margin-bottom: .375rem; color: #444; }
+.field label { display: block; font-size: .875rem; font-weight: 600; margin-bottom: .375rem; color: var(--label); }
 .field input {
-  width: 100%; padding: .75rem 1rem; border: 2px solid #e0e0e0; border-radius: 8px;
-  font-size: 1rem; outline: none; transition: border-color .2s;
+  width: 100%; padding: .75rem 1rem; border: 2px solid var(--input-border); border-radius: 8px;
+  font-size: 1rem; outline: none; transition: border-color .2s; background: var(--surface); color: var(--text);
 }
 .field input:focus { border-color: #6c5ce7; }
 .btn {
@@ -35,16 +41,31 @@ h1 { text-align: center; font-size: 1.75rem; margin-bottom: .25rem; }
 }
 .btn-sm:hover { opacity: .85; }
 table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-th { text-align: left; font-size: .8rem; color: #888; padding: .5rem .75rem; border-bottom: 2px solid #eee; }
-td { padding: .75rem; border-bottom: 1px solid #f0f0f0; font-size: .9rem; }
+th { text-align: left; font-size: .8rem; color: var(--muted); padding: .5rem .75rem; border-bottom: 2px solid var(--border); }
+td { padding: .75rem; border-bottom: 1px solid var(--row-border); font-size: .9rem; }
 td.actions { text-align: right; }
 .empty { text-align: center; padding: 2rem; color: #aaa; font-size: .9rem; }
 .error { color: #e74c3c; text-align: center; margin-top: 1rem; display: none; font-size: .9rem; }
 .logout { text-align: center; margin-top: 1.5rem; }
-.logout a { color: #888; font-size: .85rem; }
+.logout a { color: var(--muted); font-size: .85rem; }
+.theme-toggle { position: fixed; top: 1rem; right: 1rem; width: 2.5rem; height: 2.5rem; border: 1px solid var(--input-border); border-radius: 50%; background: var(--surface); color: var(--text); cursor: pointer; font-size: 1.15rem; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.theme-toggle:hover { border-color: #6c5ce7; }
+.theme-settings { margin-bottom: 1rem; }
+.theme-settings h2 { font-size: 1rem; margin-bottom: .75rem; }
+.theme-settings-row { display: flex; gap: .75rem; align-items: center; }
+.theme-settings select { flex: 1; padding: .65rem .75rem; border: 2px solid var(--input-border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: .9rem; }
+.theme-settings button { padding: .65rem 1rem; border: 0; border-radius: 8px; background: #6c5ce7; color: #fff; font-weight: 700; cursor: pointer; }
+.theme-settings button:hover { opacity: .88; }
+.theme-save-status { min-height: 1.1rem; margin-top: .5rem; color: #35b779; font-size: .8rem; }
+:root[data-app-theme="halloween"] body { background: radial-gradient(circle at 88% 12%, #fff8d8 0 4rem, transparent 4.1rem), var(--page-bg); overflow: hidden; }
+:root[data-app-theme="halloween"] body::before { content: ''; position: fixed; top: 8%; right: 8%; width: 96px; height: 96px; border-radius: 50%; background: #f6c453; box-shadow: 0 0 0 12px rgba(246,196,83,.16), 0 0 45px rgba(246,196,83,.3); pointer-events: none; }
+:root[data-app-theme="halloween"] body::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .18; background: repeating-radial-gradient(circle at 0 0, transparent 0 18px, #c44536 19px 20px, transparent 21px 42px); mask: linear-gradient(135deg, #000 0 12%, transparent 32%); }
+:root.dark[data-app-theme="halloween"] body { background: radial-gradient(circle at 88% 12%, #ff9f1c 0 4rem, transparent 4.1rem), var(--page-bg); }
+:root.dark[data-app-theme="halloween"] body::before { background: #ff9f1c; box-shadow: 0 0 0 12px rgba(255,159,28,.12), 0 0 55px rgba(255,117,24,.42); }
 </style>
 </head>
 <body>
+<button class="theme-toggle" type="button" onclick="toggleTheme()" aria-label="Switch to dark theme" title="Switch theme"><span aria-hidden="true">☾</span></button>
 <div class="container">
   <h1>Scrum Poker Admin</h1>
   <p class="subtitle">Manage rooms</p>
@@ -59,6 +80,17 @@ td.actions { text-align: right; }
   </div>
 
   <div id="adminPanel" style="display:none">
+    <div class="card theme-settings">
+      <h2>App Theme</h2>
+      <div class="theme-settings-row">
+        <select id="appTheme" aria-label="Current app theme">
+          <option value="light">Light</option>
+          <option value="halloween">Halloween</option>
+        </select>
+        <button type="button" onclick="saveTheme()">Save</button>
+      </div>
+      <div class="theme-save-status" id="themeSaveStatus" aria-live="polite"></div>
+    </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
         <strong>Rooms</strong>
@@ -73,6 +105,12 @@ td.actions { text-align: right; }
 </div>
 
 <script>
+function updateThemeButton() { const dark = document.documentElement.classList.contains('dark'); const button = document.querySelector('.theme-toggle'); button.firstElementChild.textContent = dark ? '☀' : '☾'; button.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); button.title = dark ? 'Switch to light theme' : 'Switch to dark theme'; }
+function playUiSound(file) { if (localStorage.getItem('sp-sound-muted') !== 'false') return; const audio = new Audio('/sounds/' + file); audio.volume = .3; audio.play().catch(() => {}); }
+function toggleTheme() { const dark = document.documentElement.classList.toggle('dark'); localStorage.setItem('sp-theme', dark ? 'dark' : 'light'); playUiSound('toggle_theme.mp3'); updateThemeButton(); }
+updateThemeButton();
+document.querySelectorAll('button').forEach(button => button.addEventListener('mouseenter', () => playUiSound('button_hover.mp3')));
+
 function getPwd() { return sessionStorage.getItem('sp-admin-pwd'); }
 
 async function api(path, options = {}) {
@@ -93,6 +131,7 @@ async function login() {
   if (!Array.isArray(rooms)) { showError('Invalid password'); return; }
   document.getElementById('error').style.display = 'none';
   showPanel(rooms);
+  loadTheme();
 }
 
 function showError(msg) {
@@ -103,6 +142,23 @@ function showError(msg) {
 function showLogin() {
   document.getElementById('loginCard').style.display = 'block';
   document.getElementById('adminPanel').style.display = 'none';
+}
+
+async function loadTheme() {
+  const res = await api('/api/admin/theme');
+  if (!res) return;
+  const { theme } = await res.json();
+  document.getElementById('appTheme').value = theme;
+}
+
+async function saveTheme() {
+  const theme = document.getElementById('appTheme').value;
+  const res = await api('/api/admin/theme', { method: 'PUT', body: JSON.stringify({ theme }) });
+  if (!res || !res.ok) return;
+  document.documentElement.dataset.appTheme = theme;
+  const status = document.getElementById('themeSaveStatus');
+  status.textContent = 'Theme saved.';
+  setTimeout(() => { status.textContent = ''; }, 2500);
 }
 
 async function showPanel(rooms) {
@@ -125,6 +181,7 @@ async function showPanel(rooms) {
       </td>
     </tr>`
   ).join('');
+  tbody.querySelectorAll('button').forEach(button => button.addEventListener('mouseenter', () => playUiSound('button_hover.mp3')));
 }
 
 async function deleteRoom(id) {
@@ -153,7 +210,7 @@ function esc(s) {
     const res = await api('/api/admin/rooms');
     if (res) {
       const rooms = await res.json();
-      if (Array.isArray(rooms)) showPanel(rooms);
+      if (Array.isArray(rooms)) { showPanel(rooms); loadTheme(); }
     }
   }
 })();
